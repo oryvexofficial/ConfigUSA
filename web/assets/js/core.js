@@ -346,7 +346,7 @@
     if (inb.proto === "vless") return "vless://" + inb.uuid + "@" + h + ":443?encryption=none&" + common + (net === "xhttp" ? "&mode=packet-up" : "") + "#" + e(inb.remark);
     if (inb.proto === "trojan") return "trojan://" + e(inb.password) + "@" + h + ":443?" + common + "#" + e(inb.remark);
     if (inb.proto === "vmess") return "vmess://" + btoa(JSON.stringify({ v: "2", ps: inb.remark, add: h, port: "443", id: inb.uuid, aid: "0", scy: "auto", net: net, type: "none", host: d, path: inb.path, tls: "tls", sni: d, alpn: alpn, fp: "chrome" }));
-    if (inb.proto === "shadowsocks") return "ss://" + btoa(inb.method + ":" + inb.password) + "@" + h + ":443?plugin=" + e("v2ray-plugin;tls;host=" + d + ";path=" + inb.path) + "#" + e(inb.remark);
+    if (inb.proto === "shadowsocks") return "ss://" + btoa(inb.method + ":" + inb.password).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") + "@" + h + ":443?plugin=" + e("v2ray-plugin;tls;host=" + d + ";path=" + inb.path) + "#" + e(inb.remark);
     return inb.link || "";
   };
   CH.subLinks = function () { return (CH.meta ? CH.meta.inbounds : []).filter(function (i) { return i.enabled && i.proto !== "mtproto"; }).map(function (i) { return CH.buildLink(i); }).filter(Boolean); };

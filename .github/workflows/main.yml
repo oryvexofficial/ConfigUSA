@@ -185,10 +185,39 @@ jobs:
             echo "✅ VLESS REALITY live at ${RL_HOST}:${RL_PORT}"
           }
 
+          # Ask playit.gg which public host:port the UDP tunnel got (so HY2_ENDPOINT becomes optional).
+          discover_playit_endpoint() {
+            local out ep
+            out=$(curl -fsS --max-time 12 -X POST "https://api.playit.gg/agents/rundata" \
+              -H "Authorization: agent-key ${PLAYIT_SECRET}" -H "Content-Type: application/json" -d '{}' 2>/dev/null) || return 1
+            ep=$(echo "$out" | jq -r '[.data.tunnels[]? | select(((.local_port // .origin.config.local_port // 0) | tonumber? // 0) == 8444)][0]
+              | if . == null then empty else ((.assigned_domain // .domain // .display_address // "") + ":" + ((.port.from // .from_port // .port // "") | tostring)) end' 2>/dev/null || true)
+            case "$ep" in *:?*) echo "$ep"; return 0 ;; esac
+            echo "ℹ️ playit rundata had no tunnel for local port 8444: $(echo "$out" | head -c 300)" >&2
+            return 1
+          }
+
+          start_playit() {
+            docker rm -f playit > /dev/null 2>&1 || true
+            if docker run -d --name playit --restart unless-stopped --network host -e SECRET_KEY="$PLAYIT_SECRET" \
+                 ghcr.io/playit-cloud/playit-agent:latest > /tmp/playit_docker.txt 2>&1; then
+              return 0
+            fi
+            echo "⚠️ docker playit failed ($(head -c 200 /tmp/playit_docker.txt)); trying the native agent..."
+            if [ ! -x $HOME/playit ]; then
+              curl -fsSL -o $HOME/playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64 || return 1
+              chmod +x $HOME/playit
+            fi
+            pkill -f "$HOME/playit" 2>/dev/null || true
+            SECRET_KEY="$PLAYIT_SECRET" nohup $HOME/playit --secret "$PLAYIT_SECRET" > /tmp/playit.log 2>&1 &
+            sleep 3
+            pgrep -f "$HOME/playit" > /dev/null
+          }
+
           start_hysteria2() {
             HY2_ON=""; HY2_PIN=""
-            if [ -z "$HY2_ENDPOINT" ] || [ -z "$PLAYIT_SECRET" ]; then
-              echo "ℹ️ Hysteria2 skipped (needs repo Variable HY2_ENDPOINT + Secret PLAYIT_SECRET)."
+            if [ -z "$PLAYIT_SECRET" ]; then
+              echo "ℹ️ Hysteria2 skipped: add the repo Secret PLAYIT_SECRET (see README, 3 minutes, free)."
               return 0
             fi
             if [ ! -x $HOME/hy2/hysteria ]; then echo "⚠️ hysteria binary missing."; return 0; fi
@@ -205,17 +234,28 @@ jobs:
               echo "⚠️ hysteria failed to start:"; tail -n 20 /tmp/hysteria.log || true
               HY2_PIN=""; return 0
             fi
-            # playit.gg agent forwards the public UDP endpoint -> 127.0.0.1:8444 (set in its dashboard)
-            docker rm -f playit > /dev/null 2>&1 || true
-            if docker run -d --name playit --network host -e SECRET_KEY="$PLAYIT_SECRET" \
-                 ghcr.io/playit-cloud/playit-agent:latest > /dev/null 2>&1; then
-              HY2_ON=1
-              echo "✅ Hysteria2 on UDP 8444, exposed at ${HY2_ENDPOINT} via playit.gg"
-            else
+            echo "✅ hysteria server listening on UDP 8444"
+            if ! start_playit; then
               echo "⚠️ playit agent could not start; Hysteria2 disabled."
               pkill -f "hysteria server" 2>/dev/null || true
-              HY2_PIN=""
+              HY2_PIN=""; return 0
             fi
+            if [ -z "$HY2_ENDPOINT" ]; then
+              local i ep
+              for i in $(seq 1 12); do
+                ep=$(discover_playit_endpoint 2>/tmp/playit_disc.txt) && { HY2_ENDPOINT="$ep"; break; }
+                sleep 4
+              done
+              [ -n "$HY2_ENDPOINT" ] && echo "✅ playit assigned $HY2_ENDPOINT" || { cat /tmp/playit_disc.txt | tail -n 2; }
+            fi
+            if [ -z "$HY2_ENDPOINT" ]; then
+              echo "⚠️ No public UDP endpoint. In playit.gg create a UDP tunnel -> 127.0.0.1:8444, or set the repo Variable HY2_ENDPOINT (host:port)."
+              pkill -f "hysteria server" 2>/dev/null || true
+              docker rm -f playit > /dev/null 2>&1 || true
+              HY2_PIN=""; return 0
+            fi
+            HY2_ON=1
+            echo "✅ Hysteria2 live at ${HY2_ENDPOINT} (UDP via playit.gg)"
           }
 
           # Live self-test through the public tunnel. Anything that fails is left out of the
@@ -240,7 +280,16 @@ jobs:
                 sleep 2
               done
               if [ -n "$ok" ]; then echo "  ✅ ${key} (${net}) HTTP ${code}"
-              else echo "  ❌ ${key} (${net}) HTTP ${code:-000}: excluded this cycle"; DISABLED="${DISABLED:+$DISABLED,}${key}"; fi
+              else
+                local lcode
+                lcode=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 5 \
+                  -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" \
+                  -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" "http://127.0.0.1:8080${path}" 2>/dev/null || true)
+                echo "  ❌ ${key} (${net}) public HTTP ${code:-000}, local nginx->xray HTTP ${lcode:-000}: excluded this cycle"
+                [ "$lcode" = "101" ] || [ "$net" = "xhttp" ] && echo "     (server side answers locally, so the Cloudflare edge/tunnel is rejecting this transport)" || echo "     (server side itself rejects it; xray log tail follows)"
+                tail -n 3 /tmp/xray.log 2>/dev/null | sed 's/^/     xray: /' || true
+                DISABLED="${DISABLED:+$DISABLED,}${key}"
+              fi
             done < <(python3 server/generate_configs.py --probe-list)
 
             if [ -n "$RL_PORT" ]; then
@@ -364,6 +413,9 @@ jobs:
             pgrep -x nginx > /dev/null || sudo nginx -c /tmp/xray_server/nginx.conf || true
             if ! pgrep -f "$HOME/xray/xray run" > /dev/null; then
               nohup $HOME/xray/xray run -c /tmp/xray_server/xray_config.json > /tmp/xray.log 2>&1 &
+            fi
+            if [ -n "$HY2_ON" ] && command -v docker > /dev/null && ! docker ps --format '{{.Names}}' | grep -qx playit && ! pgrep -f "$HOME/playit" > /dev/null; then
+              echo "⚠️ playit agent stopped; restarting it."; start_playit || true
             fi
             if [ -n "$HY2_ON" ] && ! pgrep -f "hysteria server" > /dev/null; then
               nohup $HOME/hy2/hysteria server -c /tmp/xray_server/hysteria.yaml > /tmp/hysteria.log 2>&1 &

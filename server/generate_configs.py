@@ -313,7 +313,7 @@ def build_link(item, creds, domain, host=None):
                "sni": domain, "alpn": alpn, "fp": "chrome"}
         return "vmess://" + base64.b64encode(json.dumps(obj, separators=(",", ":")).encode()).decode()
     if p == "shadowsocks":
-        userinfo = base64.b64encode(f"{SS_METHOD}:{creds['ss_password']}".encode()).decode()
+        userinfo = base64.urlsafe_b64encode(f"{SS_METHOD}:{creds['ss_password']}".encode()).decode().rstrip("=")
         plugin = q(f"v2ray-plugin;tls;host={domain};path={path}", safe="")
         return f"ss://{userinfo}@{host}:443?plugin={plugin}#{q(name)}"
     raise ValueError(p)

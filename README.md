@@ -20,7 +20,10 @@ Not possible on a runner: TUIC/WireGuard/mKCP (UDP, no free stable relay), gRPC 
 1. Extract the zip into the repo root, commit, push to `main`.
 2. Settings → Pages → Source: **GitHub Actions**.
 3. Secret `PAT_TOKEN` (fine-grained, this repo only, Actions + Contents read/write).
-4. Optional Hysteria2: create a free playit.gg agent and a **UDP tunnel to 127.0.0.1:8444**, then add secret `PLAYIT_SECRET` (agent secret) and repository Variable `HY2_ENDPOINT` (the tunnel's public `host:port`).
+4. Hysteria2 (optional, free, ~3 minutes):
+   1. Sign in at playit.gg, create an **Agent** (self-managed) and copy its secret key.
+   2. In the playit dashboard add a tunnel: type **UDP (custom)**, local address `127.0.0.1`, local port **8444**.
+   3. Repo → Settings → Secrets → add `PLAYIT_SECRET` = the agent secret. That is all: the workflow now asks playit for the public `host:port` by itself. (If auto-detect ever fails, set the repo Variable `HY2_ENDPOINT` to that `host:port`.)
 
 ## The site
 
