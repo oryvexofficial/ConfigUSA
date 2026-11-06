@@ -376,32 +376,28 @@
      Any element listed below (or marked data-roll) animates digit by digit whenever its text changes. */
   (function () {
     var IDS = ["stProto", "stLeft", "stUp", "valLeft", "valUp", "valProg", "valTcp", "valUpSpeed", "valDownSpeed", "valTx", "valRx", "valTotal", "inCount"];
-    function col() { var h = ""; for (var k = 0; k < 40; k++) h += "<i>" + (k % 10) + "</i>"; return '<span class="rd"><span class="rc" data-p="0" style="--p:0">' + h + "</span></span>"; }
-    function setP(c, p, anim) { c.style.transition = anim ? "" : "none"; c.style.setProperty("--p", p); c.dataset.p = p; }
+    // Each digit cell holds ONE digit. On change the old digit slides out and the new one slides in,
+    // so the DOM (and copy/paste, screen readers) always contains just the real number.
     function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/ /g, "&nbsp;"); }
     function sig(t) { return t.replace(/[0-9]/g, "#"); }
     function build(el, t) {
-      var h = "", run = "", digits = [];
+      var h = "", run = "", n = 0;
       for (var i = 0; i < t.length; i++) {
-        if (/[0-9]/.test(t[i])) { if (run) { h += '<span class="rs">' + esc(run) + "</span>"; run = ""; } h += col(); digits.push(+t[i]); }
+        if (/[0-9]/.test(t[i])) { if (run) { h += '<span class="rs">' + esc(run) + "</span>"; run = ""; } h += '<span class="rd"><span class="rv in" style="animation-delay:' + Math.min(n * 40, 320) + 'ms">' + t[i] + "</span></span>"; n++; }
         else run += t[i];
       }
       if (run) h += '<span class="rs">' + esc(run) + "</span>";
       el.innerHTML = h; el.setAttribute("aria-label", t);
-      var cols = el.querySelectorAll(".rc"); void el.offsetWidth;
-      cols.forEach(function (c, n) { c.style.transitionDelay = Math.min(n * 45, 400) + "ms"; });
-      requestAnimationFrame(function () { requestAnimationFrame(function () { cols.forEach(function (c, n) { setP(c, digits[n], true); }); }); });
     }
     function update(el, t) {
       if (!el._t || sig(el._t) !== sig(t)) return build(el, t);
-      var cols = el.querySelectorAll(".rc"), a = el._t.replace(/[^0-9]/g, ""), b = t.replace(/[^0-9]/g, "");
+      var cells = el.querySelectorAll(".rd"), a = el._t.replace(/[^0-9]/g, ""), b = t.replace(/[^0-9]/g, "");
       for (var n = 0; n < b.length; n++) {
-        if (a[n] === b[n]) continue;
-        var c = cols[n]; if (!c) continue;
-        var p = +c.dataset.p; if (p >= 20) { p = p % 10; setP(c, p, false); void c.offsetWidth; }
-        var cur = p % 10, d = +b[n], delta = d >= cur ? d - cur : 10 - cur + d;
-        c.style.transitionDelay = "0ms"; setP(c, p + delta, true);
-        if (!c._tr) { c._tr = true; c.addEventListener("transitionend", function (e) { var k = e.currentTarget; if (+k.dataset.p >= 10) setP(k, +k.dataset.p % 10, false); }); }
+        if (a[n] === b[n] || !cells[n]) continue;
+        var cell = cells[n], old = cell.querySelector(".rv:not(.out)"), nv = doc.createElement("span");
+        nv.className = "rv in"; nv.textContent = b[n];
+        if (old) { old.className = "rv out"; cell.insertBefore(nv, old); setTimeout(function (o) { if (o.parentNode) o.parentNode.removeChild(o); }, 900, old); }
+        else cell.appendChild(nv);
       }
       el.setAttribute("aria-label", t);
     }

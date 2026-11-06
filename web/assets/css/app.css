@@ -542,3 +542,13 @@ html[lang="fa"] h1 { letter-spacing: 0; }
 .rn { font-variant-numeric: normal; }
 .rc i { font-variant-numeric: tabular-nums; width: auto !important; height: 1.1em !important; margin: 0 !important; border-radius: 0 !important; background: none !important; display: block; }
 .ring-center { top: 0; inset-inline-start: 0; }
+
+
+/* v7 roller: one digit per cell, slide out / slide in */
+@keyframes rollIn  { from { opacity: 0; transform: translateY(70%) scale(.9); filter: blur(2px) } to { opacity: 1; transform: none; filter: none } }
+@keyframes rollOut { from { opacity: 1; transform: none } to { opacity: 0; transform: translateY(-70%) scale(.9); filter: blur(2px) } }
+.rd { display: inline-block; position: relative; height: 1.1em; overflow: hidden; vertical-align: top; -webkit-mask-image: none; mask-image: none; }
+.rv { display: block; height: 1.1em; line-height: 1.1em; text-align: center; font-variant-numeric: tabular-nums; }
+.rv.in { animation: rollIn .7s var(--ease) both; }
+.rv.out { position: absolute; inset: 0 auto auto 0; width: 100%; animation: rollOut .6s var(--ease) both; pointer-events: none; }
+.rc { display: none; }
