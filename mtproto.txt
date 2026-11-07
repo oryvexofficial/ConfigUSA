@@ -1,0 +1,2 @@
+https://t.me/proxy?server=bore.pub&port=31573&secret=ee432584e36b22c48084718b1b6e8c678c7777772e676f6f676c652e636f6d
+tg://proxy?server=bore.pub&port=31573&secret=ee432584e36b22c48084718b1b6e8c678c7777772e676f6f676c652e636f6d
